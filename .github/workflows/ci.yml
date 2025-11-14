@@ -1,0 +1,29 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: 
+          - data-ingestion
+          - smart-bets-ai
+          - golden-bets-ai
+          - odds-updater
+          - value-bets-ai
+          - summary-generator
+          - user-api
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Test ${{ matrix.module }}
+      run: |
+        echo "Testing ${{ matrix.module }} module"
+        # Add module-specific test commands here
