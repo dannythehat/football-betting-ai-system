@@ -105,19 +105,37 @@ class ModelTrainer:
                 'home_cards': result.get('home_cards'),
                 'away_cards': result.get('away_cards'),
                 'total_cards': result.get('total_cards'),
-                'btts': result.get('btts'),
-                'over_2_5': result.get('over_2_5'),
-                'corners_over_9_5': result.get('corners_over_9_5'),
-                'cards_over_3_5': result.get('cards_over_3_5')
             })
             
-            # Create btts_yes target
-            match_data['btts_yes'] = match_data['btts']
+            # Convert boolean targets to integers (0/1) for XGBoost
+            # This is critical - XGBoost needs integer labels, not booleans
+            btts_value = result.get('btts')
+            match_data['btts'] = int(btts_value) if btts_value is not None else None
+            match_data['btts_yes'] = match_data['btts']  # Alias for consistency
+            
+            over_2_5_value = result.get('over_2_5')
+            match_data['over_2_5'] = int(over_2_5_value) if over_2_5_value is not None else None
+            
+            corners_over_9_5_value = result.get('corners_over_9_5')
+            match_data['corners_over_9_5'] = int(corners_over_9_5_value) if corners_over_9_5_value is not None else None
+            
+            cards_over_3_5_value = result.get('cards_over_3_5')
+            match_data['cards_over_3_5'] = int(cards_over_3_5_value) if cards_over_3_5_value is not None else None
             
             matches.append(match_data)
         
         df = pd.DataFrame(matches)
+        
+        # Validate data quality
         print(f"✅ Loaded {len(df)} matches from {data_path}")
+        
+        # Check for missing targets
+        target_cols = ['over_2_5', 'cards_over_3_5', 'corners_over_9_5', 'btts_yes']
+        for col in target_cols:
+            missing = df[col].isna().sum()
+            if missing > 0:
+                print(f"⚠️  Warning: {missing} matches missing {col} target")
+        
         return df
     
     def train_model(
@@ -142,6 +160,12 @@ class ModelTrainer:
             Trained XGBoost model
         """
         print(f"\n🔄 Training {market.upper()} model...")
+        
+        # Validate targets are binary (0 or 1)
+        unique_train = y_train.unique()
+        unique_val = y_val.unique()
+        print(f"   Training target values: {sorted(unique_train)}")
+        print(f"   Validation target values: {sorted(unique_val)}")
         
         # Initialize model
         model = XGBClassifier(**self.model_params)
@@ -205,6 +229,26 @@ class ModelTrainer:
                 # Prepare data
                 X, y = self.feature_engineer.prepare_training_data(df, market)
                 
+                # Remove any rows with missing targets
+                valid_mask = ~y.isna()
+                X = X[valid_mask]
+                y = y[valid_mask]
+                
+                if len(y) == 0:
+                    print(f"❌ No valid data for {market} market")
+                    continue
+                
+                # Check class distribution
+                class_counts = y.value_counts()
+                print(f"\n📊 {market.upper()} class distribution:")
+                print(f"   Class 0: {class_counts.get(0, 0)} samples")
+                print(f"   Class 1: {class_counts.get(1, 0)} samples")
+                
+                # Ensure we have both classes
+                if len(class_counts) < 2:
+                    print(f"❌ {market} has only one class - cannot train")
+                    continue
+                
                 # Split data
                 X_train, X_val, y_train, y_val = train_test_split(
                     X, y, test_size=test_size, random_state=42, stratify=y
@@ -223,7 +267,11 @@ class ModelTrainer:
                 continue
         
         # Save models and metadata
-        self.save_models()
+        if self.models:
+            self.save_models()
+        else:
+            print("\n❌ No models were successfully trained!")
+            return
         
         print("\n" + "=" * 60)
         print("✅ TRAINING COMPLETE")
