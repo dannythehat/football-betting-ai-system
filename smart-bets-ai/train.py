@@ -17,10 +17,16 @@ from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings('ignore')
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root and smart-bets-ai directory to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from features import FeatureEngineer
+# Try importing from smart_bets_ai package first, fallback to direct import
+try:
+    from smart_bets_ai.features import FeatureEngineer
+except ImportError:
+    from features import FeatureEngineer
 
 
 class ModelTrainer:
