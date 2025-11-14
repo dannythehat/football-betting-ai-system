@@ -37,8 +37,7 @@ jobs:
     
     - name: Train models
       run: |
-        cd smart-bets-ai
-        python train.py
+        python smart-bets-ai/train.py
       env:
         PYTHONPATH: ${{ github.workspace }}
     
