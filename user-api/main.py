@@ -4,9 +4,11 @@ FastAPI application serving predictions and handling data ingestion
 """
 
 import os
+from typing import List, Dict
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import sys
 from pathlib import Path
 
@@ -16,6 +18,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data_ingestion.database import get_db_session, init_db
 from data_ingestion.schemas import BatchIngestRequest, IngestResponse
 from data_ingestion.ingestion import DataIngestionService
+
+# Import Smart Bets predictor
+try:
+    from smart_bets_ai.predict import SmartBetsPredictor
+    SMART_BETS_AVAILABLE = True
+except ImportError:
+    SMART_BETS_AVAILABLE = False
+    print("⚠️  Smart Bets AI not available. Train models first.")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -33,15 +43,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize predictor
+predictor = None
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup"""
+    """Initialize database and models on startup"""
+    global predictor
+    
     try:
         init_db()
         print("✅ Database initialized successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
+    
+    # Load Smart Bets models
+    if SMART_BETS_AVAILABLE:
+        try:
+            predictor = SmartBetsPredictor()
+            print("✅ Smart Bets AI models loaded")
+        except Exception as e:
+            print(f"⚠️  Could not load Smart Bets models: {e}")
 
 
 @app.get("/")
@@ -54,6 +77,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "data_ingestion": "/api/v1/data/ingest",
+            "smart_bets": "/api/v1/predictions/smart-bets",
             "docs": "/docs"
         }
     }
@@ -65,7 +89,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "football-betting-ai",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "smart_bets_available": predictor is not None
     }
 
 
@@ -113,6 +138,79 @@ async def ingest_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
+        )
+
+
+# Pydantic models for Smart Bets
+class MatchInput(BaseModel):
+    """Match data for prediction"""
+    match_id: str
+    home_team: str
+    away_team: str
+    home_goals_avg: float
+    away_goals_avg: float
+    home_goals_conceded_avg: float
+    away_goals_conceded_avg: float
+    home_corners_avg: float
+    away_corners_avg: float
+    home_cards_avg: float
+    away_cards_avg: float
+    home_btts_rate: float
+    away_btts_rate: float
+    home_form: str = ""
+    away_form: str = ""
+
+
+class SmartBetsRequest(BaseModel):
+    """Request for Smart Bets predictions"""
+    matches: List[MatchInput]
+
+
+@app.post(
+    "/api/v1/predictions/smart-bets",
+    tags=["Predictions"],
+    status_code=status.HTTP_200_OK
+)
+async def get_smart_bets(request: SmartBetsRequest):
+    """
+    Get Smart Bets predictions for matches
+    
+    Returns the highest probability bet across all 4 markets for each fixture:
+    - Goals: Over/Under 2.5
+    - Cards: Over/Under 3.5
+    - Corners: Over/Under 9.5
+    - BTTS: Yes/No
+    
+    Each prediction includes:
+    - Market and selection details
+    - Probability and percentage
+    - Explanation
+    - Alternative markets with probabilities
+    """
+    if predictor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Smart Bets AI models not loaded. Please train models first."
+        )
+    
+    try:
+        # Convert Pydantic models to dicts
+        matches = [match.model_dump() for match in request.matches]
+        
+        # Get predictions
+        predictions = predictor.predict_batch(matches)
+        
+        return {
+            "success": True,
+            "total_matches": len(matches),
+            "predictions": predictions,
+            "model_version": predictor.metadata.get('version', '1.0.0')
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Prediction error: {str(e)}"
         )
 
 
