@@ -9,6 +9,7 @@ Your AI builds the **prediction engine**—the core intelligence that:
   - **Smart Bets:** Best probabilistic predictions ignoring odds
   - **Golden Bets:** Very high confidence bets based on AI thresholds
   - **Value Bets:** Calculated dynamically as odds change, by comparing AI probabilities vs implied odds
+- **On-Demand Analysis:** User selects a match + bet type, AI returns probability and explanation
 - Generates human-readable explanations describing why particular bets were selected
 - Exposes API endpoints that your main app queries for predictions and explanations
 - Implements a caching mechanism to serve these predictions quickly and efficiently
@@ -36,7 +37,7 @@ These belong to your main app ecosystem.
 - Current odds per bet market (decimal or fractional odds) including market ID and selection ID
 - Timestamp indicating data freshness
 
-#### Example Input:
+#### Example Input (Batch Predictions):
 
 ```json
 {
@@ -67,6 +68,17 @@ These belong to your main app ecosystem.
 }
 ```
 
+#### Example Input (On-Demand User Selection):
+
+```json
+{
+  "match_id": "12345",
+  "bet_type": "over_2.5_goals",
+  "market_id": "total_goals",
+  "selection_id": "over_2.5"
+}
+```
+
 ### Output Format: What We Return to Your App
 
 **Structured JSON response** per match including:
@@ -77,7 +89,7 @@ These belong to your main app ecosystem.
 - Explanation strings or objects describing rationale
 - Timestamps of prediction generation
 
-#### Example Output:
+#### Example Output (Batch Predictions):
 
 ```json
 {
@@ -112,6 +124,61 @@ These belong to your main app ecosystem.
 }
 ```
 
+#### Example Output (On-Demand User Selection):
+
+```json
+{
+  "match_id": "12345",
+  "bet_type": "over_2.5_goals",
+  "probability": 0.67,
+  "percentage": "67%",
+  "comment": "Both teams average 2.5+ goals combined in recent matches. Team A's attacking form is strong with 1.4 goals per game, while Team B concedes frequently. Historical head-to-head shows 4 of last 5 meetings had over 2.5 goals.",
+  "confidence": "high",
+  "timestamp": "2025-11-15T09:15:00Z"
+}
+```
+
+---
+
+## API Endpoints
+
+### 1. Batch Predictions (Daily)
+**POST** `/api/v1/predictions/batch`
+
+Receives all matches for the day, returns Smart/Golden/Value bets.
+
+### 2. On-Demand Analysis (User-Selected)
+**POST** `/api/v1/predictions/analyze`
+
+User selects match + bet type, returns probability and explanation.
+
+**Request:**
+```json
+{
+  "match_id": "12345",
+  "bet_type": "btts",
+  "market_id": "both_teams_to_score",
+  "selection_id": "yes"
+}
+```
+
+**Response:**
+```json
+{
+  "match_id": "12345",
+  "bet_type": "btts",
+  "probability": 0.72,
+  "percentage": "72%",
+  "comment": "Team A has scored in 8 of last 10 home games. Team B has scored in 7 of last 10 away games. Both teams have high BTTS rates (60% and 50% respectively).",
+  "confidence": "high"
+}
+```
+
+### 3. Odds Update (Real-time)
+**POST** `/api/v1/odds/update`
+
+Receives updated odds, triggers Value Bet recalculation.
+
 ---
 
 ## AI Model Approach
@@ -135,6 +202,11 @@ A **probabilistic classification model** (e.g., gradient boosting like **XGBoost
    - Dynamically recalculate with each odds refresh
    - Formula: `Value = AI_Probability - Implied_Probability`
 
+4. **On-Demand Analysis:**
+   - Use same trained models to analyze user-selected bet types
+   - Generate contextual explanations based on input stats
+   - Return probability + human-readable comment
+
 ### Future Enhancement:
 
 Optionally, explore neural nets or transformer-based models for deeper pattern recognition after baseline validation.
@@ -144,10 +216,12 @@ Optionally, explore neural nets or transformer-based models for deeper pattern r
 ## System Summary
 
 ### What You'll Receive:
-Keyed JSON daily with fixture, stats, odds
+- Keyed JSON daily with fixture, stats, odds (batch)
+- Single match + bet type requests (on-demand)
 
 ### What You'll Return:
-Keyed JSON predictions with bet types and explanations
+- Keyed JSON predictions with bet types and explanations (batch)
+- Probability + comment for user-selected bets (on-demand)
 
 ### AI Models Focus:
 First on robust probabilistic predictions
@@ -176,6 +250,29 @@ Your App → [JSON Input] → AI Prediction Engine → [JSON Output] → Your Ap
                     Summary Generator
                               ↓
                          User API
+                         ↓     ↓
+                   [Batch] [On-Demand]
                               ↓
                       [Cached Results]
 ```
+
+## Use Cases
+
+### Use Case 1: Daily Batch Predictions
+- Your app sends all fixtures at 8 AM
+- AI processes and returns Smart/Golden/Value bets
+- Results cached for fast access
+- Users browse pre-calculated recommendations
+
+### Use Case 2: User Explores Specific Bet
+- User clicks on "Manchester United vs Liverpool"
+- User selects "Over 2.5 Goals"
+- Your app calls `/api/v1/predictions/analyze`
+- AI returns: "67% probability - Both teams average 2.5+ goals..."
+- User sees instant AI analysis
+
+### Use Case 3: Odds Change
+- Bookmaker updates odds from 1.95 to 2.10
+- Your app sends odds update
+- AI recalculates Value Bets
+- New value opportunities flagged
