@@ -38,7 +38,14 @@ cd golden-bets-ai
 pip install -r requirements.txt
 ```
 
-### 3. Test Golden Bets Filter
+### 3. Test Golden Bets Predictor
+
+```bash
+# Run full prediction pipeline
+python predict.py
+```
+
+**Or test just the filter:**
 
 ```bash
 python test_filter.py
@@ -47,37 +54,44 @@ python test_filter.py
 **Expected Output:**
 ```
 ============================================================
-GOLDEN BETS AI - TEST RUN
+GOLDEN BETS PREDICTIONS
 ============================================================
 
-Configuration:
-  Confidence Threshold: 85%
-  Min Ensemble Agreement: 90%
-  Max Daily Picks: 3
+Found 3 Golden Bets:
 
-Input: 5 Smart Bets predictions
-Output: 3 Golden Bets selected
-
-============================================================
-GOLDEN BETS RESULTS
-============================================================
-
-🏆 Golden Bet #1
-  Match: Team C vs Team D
-  Market: Total Goals
-  Selection: Over 2.5
-  Confidence: 92.0%
-  Agreement: 95.2%
-  Golden Score: 0.930
-
-  🏆 Golden Bet Selection Criteria Met:
-  • AI Confidence: 92.0% (≥85% threshold)
-  • Model Agreement: 95.2% (≥90% threshold)
-  • Market: Total Goals
-  • This represents one of the top 1-3 safest bets identified today
+1. Team C vs Team D
+   Market: Total Goals
+   Prediction: Over 2.5
+   Confidence: 92.0%
+   Agreement: 95.2%
+   🏆 Golden Bet Selection Criteria Met:
+   • AI Confidence: 92.0% (≥85% threshold)
+   • Model Agreement: 95.2% (≥90% threshold)
+   • Market: Total Goals
+   • This represents one of the top 1-3 safest bets identified today
 ```
 
-### 4. Use in Python
+### 4. Use in Python (Recommended)
+
+```python
+from golden_bets_ai import GoldenBetsPredictor
+
+# Initialize predictor (handles Smart Bets automatically)
+predictor = GoldenBetsPredictor()
+
+# Get Golden Bets predictions
+golden_bets = predictor.predict(matches)
+
+# Display results
+for bet in golden_bets:
+    print(f"🏆 {bet['home_team']} vs {bet['away_team']}")
+    print(f"   {bet['market_name']}: {bet['selection_name']}")
+    print(f"   Confidence: {bet['confidence_score']:.1%}")
+    print(f"   Golden Score: {bet['golden_score']:.3f}")
+    print(f"   {bet['reasoning']}")
+```
+
+### 4b. Manual Filtering (Advanced)
 
 ```python
 from golden_bets_ai import GoldenBetsFilter
@@ -101,7 +115,7 @@ golden_bets = filter.filter_golden_bets(
 for bet in golden_bets:
     print(f"🏆 {bet['home_team']} vs {bet['away_team']}")
     print(f"   {bet['market_name']}: {bet['selection_name']}")
-    print(f"   Confidence: {bet['confidence_score']:.1%}")
+    print(f"   Confidence: {bet['confidence_score']:.1%}\"")
     print(f"   Golden Score: {bet['golden_score']:.3f}")
 ```
 
@@ -161,6 +175,7 @@ curl -X POST http://localhost:8000/api/v1/predictions/golden-bets \
       "confidence_score": 0.87,
       "ensemble_agreement": 0.95,
       "golden_score": 0.894,
+      "bet_category": "golden",
       "reasoning": "🏆 Golden Bet Selection Criteria Met:\n• AI Confidence: 87.0% (≥85% threshold)\n• Model Agreement: 95.0% (≥90% threshold)\n• Market: Total Corners\n• This represents one of the top 1-3 safest bets identified today"
     }
   ],
@@ -242,12 +257,45 @@ filter.max_picks = 2
 
 ## Integration with Your App
 
-### Daily Golden Bets Workflow
+### Daily Golden Bets Workflow (Using Predictor)
 
 ```python
 import schedule
 import time
 from datetime import datetime
+from golden_bets_ai import GoldenBetsPredictor
+
+def fetch_daily_golden_bets():
+    """Fetch Golden Bets for today's matches"""
+    
+    # 1. Get today's fixtures from your app
+    matches = get_todays_fixtures()
+    
+    # 2. Get Golden Bets (handles Smart Bets automatically)
+    predictor = GoldenBetsPredictor()
+    golden_bets = predictor.predict(matches)
+    
+    # 3. Send to your app
+    send_to_app(golden_bets)
+    
+    print(f"[{datetime.now()}] Sent {len(golden_bets)} Golden Bets")
+
+# Schedule daily at 9 AM
+schedule.every().day.at("09:00").do(fetch_daily_golden_bets)
+
+while True:
+    schedule.run_pending()
+    time.sleep(60)
+```
+
+### Manual Workflow (Using Filter)
+
+```python
+import schedule
+import time
+from datetime import datetime
+from smart_bets_ai.predict import SmartBetsPredictor
+from golden_bets_ai import GoldenBetsFilter
 
 def fetch_daily_golden_bets():
     """Fetch Golden Bets for today's matches"""
@@ -350,10 +398,20 @@ curl http://localhost:8000/api/v1/predictions/golden-bets/config
 
 ---
 
+## Module Files
+
+- **`predict.py`** - Main prediction pipeline (recommended)
+- **`filter.py`** - Core filtering logic
+- **`config.py`** - Configuration settings
+- **`test_filter.py`** - Test script with sample data
+
+---
+
 ## Support
 
 - **Documentation:** [golden-bets-ai/README.md](golden-bets-ai/README.md)
 - **Configuration:** [golden-bets-ai/config.py](golden-bets-ai/config.py)
+- **Prediction Pipeline:** [golden-bets-ai/predict.py](golden-bets-ai/predict.py)
 - **Test Script:** [golden-bets-ai/test_filter.py](golden-bets-ai/test_filter.py)
 - **Main README:** [README.md](README.md)
 
