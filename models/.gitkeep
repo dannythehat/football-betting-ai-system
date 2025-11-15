@@ -1,0 +1,6 @@
+# This directory will contain trained models
+# Subdirectories will be created by training scripts:
+# - models/goals/
+# - models/btts/
+# - models/cards/
+# - models/corners/
