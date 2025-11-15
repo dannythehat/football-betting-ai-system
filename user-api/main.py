@@ -4,7 +4,7 @@ FastAPI application serving predictions and handling data ingestion
 """
 
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -35,6 +35,14 @@ except ImportError:
     GOLDEN_BETS_AVAILABLE = False
     print("⚠️  Golden Bets AI not available. Train models first.")
 
+# Import Value Bets predictor
+try:
+    from value_bets_ai.predict import ValueBetsPredictor
+    VALUE_BETS_AVAILABLE = True
+except ImportError:
+    VALUE_BETS_AVAILABLE = False
+    print("⚠️  Value Bets AI not available.")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Football Betting AI System",
@@ -54,12 +62,13 @@ app.add_middleware(
 # Initialize predictors
 predictor = None
 golden_predictor = None
+value_predictor = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and models on startup"""
-    global predictor, golden_predictor
+    global predictor, golden_predictor, value_predictor
     
     try:
         init_db()
@@ -82,6 +91,14 @@ async def startup_event():
             print("✅ Golden Bets AI models loaded")
         except Exception as e:
             print(f"⚠️  Could not load Golden Bets models: {e}")
+    
+    # Load Value Bets models
+    if VALUE_BETS_AVAILABLE:
+        try:
+            value_predictor = ValueBetsPredictor()
+            print("✅ Value Bets AI models loaded")
+        except Exception as e:
+            print(f"⚠️  Could not load Value Bets models: {e}")
 
 
 @app.get("/")
@@ -96,6 +113,7 @@ async def root():
             "data_ingestion": "/api/v1/data/ingest",
             "smart_bets": "/api/v1/predictions/smart-bets",
             "golden_bets": "/api/v1/predictions/golden-bets",
+            "value_bets": "/api/v1/predictions/value-bets",
             "docs": "/docs"
         }
     }
@@ -109,7 +127,8 @@ async def health_check():
         "service": "football-betting-ai",
         "version": "1.0.0",
         "smart_bets_available": predictor is not None,
-        "golden_bets_available": golden_predictor is not None
+        "golden_bets_available": golden_predictor is not None,
+        "value_bets_available": value_predictor is not None
     }
 
 
@@ -180,9 +199,19 @@ class MatchInput(BaseModel):
     away_form: str = ""
 
 
+class MatchWithOdds(MatchInput):
+    """Match data with odds for value betting"""
+    odds: Dict[str, float]
+
+
 class PredictionRequest(BaseModel):
     """Request for predictions"""
     matches: List[MatchInput]
+
+
+class ValueBetsRequest(BaseModel):
+    """Request for Value Bets predictions"""
+    matches: List[MatchWithOdds]
 
 
 @app.post(
@@ -276,6 +305,59 @@ async def predict_golden_bets(request: PredictionRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Golden Bets prediction error: {str(e)}"
+        )
+
+
+@app.post(
+    "/api/v1/predictions/value-bets",
+    tags=["Predictions"],
+    status_code=status.HTTP_200_OK
+)
+async def predict_value_bets(request: ValueBetsRequest):
+    """
+    Generate Value Bets predictions (top 3 daily picks with positive EV)
+    
+    Value Bets identify opportunities where AI probability exceeds bookmaker odds:
+    - Maximum 3 predictions per day
+    - Minimum 10% positive value
+    - Minimum 5% expected value (EV)
+    - Focus on long-term profitability
+    
+    Required: Match data with odds for all 8 selections:
+    - goals_over_2_5, goals_under_2_5
+    - cards_over_3_5, cards_under_3_5
+    - corners_over_9_5, corners_under_9_5
+    - btts_yes, btts_no
+    
+    Returns:
+    - Top 3 Value Bets ranked by value score
+    - AI probability vs implied probability
+    - Value percentage and expected value
+    - Detailed reasoning for each pick
+    """
+    if value_predictor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Value Bets AI not loaded."
+        )
+    
+    try:
+        # Convert Pydantic models to dicts
+        matches = [match.model_dump() for match in request.matches]
+        
+        # Get Value Bets predictions
+        predictions = value_predictor.predict(matches)
+        
+        return {
+            "success": True,
+            "predictions": predictions,
+            "count": len(predictions),
+            "max_daily": 3
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Value Bets prediction error: {str(e)}"
         )
 
 
