@@ -43,6 +43,14 @@ except ImportError:
     VALUE_BETS_AVAILABLE = False
     print("⚠️  Value Bets AI not available.")
 
+# Import Custom Analysis
+try:
+    from custom_analysis import CustomBetAnalyzer
+    CUSTOM_ANALYSIS_AVAILABLE = True
+except ImportError:
+    CUSTOM_ANALYSIS_AVAILABLE = False
+    print("⚠️  Custom Analysis not available.")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Football Betting AI System",
@@ -63,12 +71,13 @@ app.add_middleware(
 predictor = None
 golden_predictor = None
 value_predictor = None
+custom_analyzer = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and models on startup"""
-    global predictor, golden_predictor, value_predictor
+    global predictor, golden_predictor, value_predictor, custom_analyzer
     
     try:
         init_db()
@@ -99,6 +108,14 @@ async def startup_event():
             print("✅ Value Bets AI models loaded")
         except Exception as e:
             print(f"⚠️  Could not load Value Bets models: {e}")
+    
+    # Load Custom Analysis
+    if CUSTOM_ANALYSIS_AVAILABLE:
+        try:
+            custom_analyzer = CustomBetAnalyzer()
+            print("✅ Custom Analysis loaded")
+        except Exception as e:
+            print(f"⚠️  Could not load Custom Analysis: {e}")
 
 
 @app.get("/")
@@ -114,6 +131,7 @@ async def root():
             "smart_bets": "/api/v1/predictions/smart-bets",
             "golden_bets": "/api/v1/predictions/golden-bets",
             "value_bets": "/api/v1/predictions/value-bets",
+            "custom_analysis": "/api/v1/predictions/custom-analysis",
             "docs": "/docs"
         }
     }
@@ -128,7 +146,8 @@ async def health_check():
         "version": "1.0.0",
         "smart_bets_available": predictor is not None,
         "golden_bets_available": golden_predictor is not None,
-        "value_bets_available": value_predictor is not None
+        "value_bets_available": value_predictor is not None,
+        "custom_analysis_available": custom_analyzer is not None
     }
 
 
@@ -212,6 +231,13 @@ class PredictionRequest(BaseModel):
 class ValueBetsRequest(BaseModel):
     """Request for Value Bets predictions"""
     matches: List[MatchWithOdds]
+
+
+class CustomAnalysisRequest(BaseModel):
+    """Request for Custom Bet Analysis"""
+    match_data: MatchInput
+    market_id: str
+    selection_id: str
 
 
 @app.post(
@@ -358,6 +384,69 @@ async def predict_value_bets(request: ValueBetsRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Value Bets prediction error: {str(e)}"
+        )
+
+
+@app.post(
+    "/api/v1/predictions/custom-analysis",
+    tags=["Predictions"],
+    status_code=status.HTTP_200_OK
+)
+async def analyze_custom_bet(request: CustomAnalysisRequest):
+    """
+    Analyze a user-selected bet (Custom Bet Analysis)
+    
+    Provides on-demand analysis for user-selected fixtures and bet types:
+    - User chooses any fixture and one of the 4 markets
+    - AI analyzes the specific bet
+    - Returns probability, verdict, and reasoning
+    - Compares with Smart Bet recommendation
+    - Educational feedback on bet quality
+    
+    Supported markets:
+    - total_goals: over_2.5, under_2.5
+    - total_cards: over_3.5, under_3.5
+    - total_corners: over_9.5, under_9.5
+    - btts: yes, no
+    
+    Returns:
+    - Probability and confidence level
+    - Verdict (Excellent/Good/Moderate/Weak/Not Recommended)
+    - Market-specific explanation
+    - Comparison with Smart Bet
+    - Alternative Smart Bet suggestion if different
+    """
+    if custom_analyzer is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Custom Analysis not loaded. Please ensure Smart Bets models are trained."
+        )
+    
+    try:
+        # Convert match data to dict
+        match_data = request.match_data.model_dump()
+        
+        # Analyze custom bet
+        result = custom_analyzer.analyze_custom_bet(
+            match_data=match_data,
+            market_id=request.market_id,
+            selection_id=request.selection_id
+        )
+        
+        return {
+            "success": True,
+            "analysis": result
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Custom Analysis error: {str(e)}"
         )
 
 
