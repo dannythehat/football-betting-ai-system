@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     from smart_bets_ai.features import FeatureEngineer
 except ImportError:
-    from features import FeatureEngineer
+    from smart_bets_ai.features import FeatureEngineer
 
 
 class ModelTrainer:

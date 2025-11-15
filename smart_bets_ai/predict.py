@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 
-from features import FeatureEngineer
+from .features import FeatureEngineer
 
 
 class SmartBetsPredictor:
