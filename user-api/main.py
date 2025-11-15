@@ -27,6 +27,14 @@ except ImportError:
     SMART_BETS_AVAILABLE = False
     print("⚠️  Smart Bets AI not available. Train models first.")
 
+# Import Golden Bets predictor
+try:
+    from golden_bets_ai.predict import GoldenBetsPredictor
+    GOLDEN_BETS_AVAILABLE = True
+except ImportError:
+    GOLDEN_BETS_AVAILABLE = False
+    print("⚠️  Golden Bets AI not available. Train models first.")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Football Betting AI System",
@@ -43,14 +51,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize predictor
+# Initialize predictors
 predictor = None
+golden_predictor = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and models on startup"""
-    global predictor
+    global predictor, golden_predictor
     
     try:
         init_db()
@@ -65,6 +74,14 @@ async def startup_event():
             print("✅ Smart Bets AI models loaded")
         except Exception as e:
             print(f"⚠️  Could not load Smart Bets models: {e}")
+    
+    # Load Golden Bets models
+    if GOLDEN_BETS_AVAILABLE:
+        try:
+            golden_predictor = GoldenBetsPredictor()
+            print("✅ Golden Bets AI models loaded")
+        except Exception as e:
+            print(f"⚠️  Could not load Golden Bets models: {e}")
 
 
 @app.get("/")
@@ -78,6 +95,7 @@ async def root():
             "health": "/health",
             "data_ingestion": "/api/v1/data/ingest",
             "smart_bets": "/api/v1/predictions/smart-bets",
+            "golden_bets": "/api/v1/predictions/golden-bets",
             "docs": "/docs"
         }
     }
@@ -90,7 +108,8 @@ async def health_check():
         "status": "healthy",
         "service": "football-betting-ai",
         "version": "1.0.0",
-        "smart_bets_available": predictor is not None
+        "smart_bets_available": predictor is not None,
+        "golden_bets_available": golden_predictor is not None
     }
 
 
@@ -141,7 +160,7 @@ async def ingest_data(
         )
 
 
-# Pydantic models for Smart Bets
+# Pydantic models for predictions
 class MatchInput(BaseModel):
     """Match data for prediction"""
     match_id: str
@@ -161,8 +180,8 @@ class MatchInput(BaseModel):
     away_form: str = ""
 
 
-class SmartBetsRequest(BaseModel):
-    """Request for Smart Bets predictions"""
+class PredictionRequest(BaseModel):
+    """Request for predictions"""
     matches: List[MatchInput]
 
 
@@ -171,7 +190,7 @@ class SmartBetsRequest(BaseModel):
     tags=["Predictions"],
     status_code=status.HTTP_200_OK
 )
-async def get_smart_bets(request: SmartBetsRequest):
+async def get_smart_bets(request: PredictionRequest):
     """
     Get Smart Bets predictions for matches
     
@@ -211,6 +230,52 @@ async def get_smart_bets(request: SmartBetsRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Prediction error: {str(e)}"
+        )
+
+
+@app.post(
+    "/api/v1/predictions/golden-bets",
+    tags=["Predictions"],
+    status_code=status.HTTP_200_OK
+)
+async def predict_golden_bets(request: PredictionRequest):
+    """
+    Generate Golden Bets predictions (1-3 daily picks, 85%+ confidence)
+    
+    Golden Bets are the highest confidence predictions filtered from Smart Bets:
+    - Maximum 3 predictions per day
+    - Minimum 85% confidence score
+    - High ensemble model agreement
+    - Detailed reasoning for each pick
+    
+    Returns:
+    - Top 1-3 Golden Bets with highest confidence
+    - Confidence scores and ensemble agreement
+    - Detailed reasoning for each prediction
+    """
+    if golden_predictor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Golden Bets AI models not loaded. Please train models first."
+        )
+    
+    try:
+        # Convert Pydantic models to dicts
+        matches = [match.model_dump() for match in request.matches]
+        
+        # Get Golden Bets predictions
+        predictions = golden_predictor.predict(matches)
+        
+        return {
+            "success": True,
+            "predictions": predictions,
+            "count": len(predictions),
+            "max_daily": 3
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Golden Bets prediction error: {str(e)}"
         )
 
 
