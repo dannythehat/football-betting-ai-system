@@ -1,0 +1,42 @@
+# Deep Learning Ensemble Requirements
+# Phase 2: Advanced AI Models
+
+# Core ML Libraries
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# Gradient Boosting Models
+xgboost>=2.0.0
+lightgbm>=4.0.0
+catboost>=1.2.0
+
+# Deep Learning (PyTorch)
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Utilities
+tqdm>=4.65.0
+joblib>=1.3.0
+
+# Existing Requirements (from base system)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.4.0
+python-multipart>=0.0.6
+
+# Database
+psycopg2-binary>=2.9.9
+redis>=5.0.0
+
+# Optional: GPU Support
+# Install CUDA-enabled PyTorch separately if using GPU:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Development
+pytest>=7.4.0
+black>=23.10.0
+flake8>=6.1.0
+mypy>=1.6.0
